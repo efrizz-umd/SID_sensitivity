@@ -16,7 +16,7 @@ used as in input to the shock script, allowing multiple velocities of impact to 
 The restart files we produced in this work are located at the link below.
 
 ### Restart files ###
-PASTELINKHERE
+Zenodo link TBD
 
 ### Channel preparation ###
 The in.pour files fill a channel of the desired channel geometry. In this work we perform a scaling of the base case from [1]
