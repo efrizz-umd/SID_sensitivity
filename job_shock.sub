@@ -1,0 +1,29 @@
+#!/bin/csh
+#SBATCH --job-name=SID_JOBTYPE
+#SBATCH --nodes=1
+#SBATCH --ntasks=128
+#SBATCH --oversubscribe
+#SBATCH --time=12:00:00
+#SBATCH --mail-user USERNAME@DOMAINADDR.EXT
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=BEGIN
+#SBATCH --mail-type=END
+
+#############################################################
+# change the below input variable to your own filename
+#############################################################
+
+# enter the directory where the input script is
+set dir=/home/efrizz/scratch.hartzell-lab/LIGGGHTS-SIM/youngs/5E6
+# point to the location of your compiled LIGGGHTS executable/shell script
+set codeexe=/home/efrizz/scratch.hartzell-lab/LIGGGHTS-SIM/2m_20cm_compact_sweep/lmp_auto
+
+cd $dir
+# clean up
+rm -r -f output.txt
+# load compilers
+module load gcc/9.4.0
+# load mpi 
+module load openmpi/gcc/9.4.0/zen2/4.1.1
+# launch shock - CHANGE INPUT SCRIPT NAME HERE
+mpirun -np 128 $codeexe -echo both -i ./in.shock > ./output.txt

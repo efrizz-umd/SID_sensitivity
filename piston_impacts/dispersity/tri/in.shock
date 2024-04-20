@@ -1,0 +1,227 @@
+### Eric Frizzell December, 2023 - efrizz@umd.edu
+### shock initiation script
+### tridisperse
+
+### Initialization
+
+## Preliminaries
+
+units 	si
+atom_style 	granular
+
+# the product of the processors must equal P, the number of processors used when running the file: mpirun -np 4 ...
+processors 	1 128 1
+
+# periodic x boundaries, fixed y boundaries, fixed -z for floor and fixed shrink wrap for ceiling
+boundary 	p f fm
+
+#LIGGGHTS-Public shouuld produce the same answers for any newton flag setting, besides round off
+newton 	off
+
+# communicate single - each processor acquires informaton for ghost atoms within a single distance of its sub domain - the default
+# vel yes - communicate velocity info with ghost atoms
+communicate 	single vel yes
+
+soft_particles yes
+
+#read_restart	../../2m_20cm_compact_sweep/restart_2m_compact_20cm.static
+read_restart ./restart_tri.static
+## Declare domain
+
+# -x +x -y +y -z +z 
+# reg is the name of the region, block is the region type, unitx box means define in box units instead of lattice
+region  reg block -.01 .01 0.0 2.00 0.0 .25 units box
+
+# neighbor skin style - atom pairs within a neighbor cutoff distance = force cutoff + skin distance, style = bin
+neighbor	 0.000375 bin	 # half the radius of the smallest particles
+
+# neigh_modify delay 0, this is the default, rebuild neighbor list every timestep
+neigh_modify delay 0
+
+# modulus
+variable E_1 equal 5E6
+variable E_2 equal 5E6
+variable E_3 equal 5E6
+# poisson
+variable nu_1 equal 0.2
+variable nu_2 equal 0.2
+variable nu_3 equal 0.2
+#charvel
+# restitution
+variable e_11 equal 0.06
+variable e_12 equal 0.06
+variable e_13 equal 0.06
+variable e_21 equal 0.06
+variable e_22 equal 0.06
+variable e_23 equal 0.06
+variable e_31 equal 0.06
+variable e_32 equal 0.06
+variable e_33 equal 0.06
+#friction
+variable f_11 equal 1.0
+variable f_12 equal 1.0
+variable f_13 equal 1.0
+variable f_21 equal 1.0
+variable f_22 equal 1.0
+variable f_23 equal 1.0
+variable f_31 equal 1.0
+variable f_32 equal 1.0
+variable f_33 equal 1.0
+#cohesion
+variable c_11 equal 1000.0
+variable c_12 equal 1000.0
+variable c_13 equal 1000.0
+variable c_21 equal 1000.0
+variable c_22 equal 1000.0
+variable c_23 equal 1000.0
+variable c_31 equal 1000.0
+variable c_32 equal 1000.0
+variable c_33 equal 1000.0
+#rolling
+variable rf_11 equal 0.8
+variable rf_12 equal 0.8
+variable rf_13 equal 0.8
+variable rf_21 equal 0.8
+variable rf_22 equal 0.8
+variable rf_23 equal 0.8
+variable rf_31 equal 0.8
+variable rf_32 equal 0.8
+variable rf_33 equal 0.8
+# rolling viscous damping
+variable v_11 equal 0.0
+variable v_12 equal 0.0
+variable v_13 equal 0.0
+variable v_21 equal 0.0
+variable v_22 equal 0.0
+variable v_23 equal 0.0
+variable v_31 equal 0.0
+variable v_32 equal 0.0
+variable v_33 equal 0.0
+
+## Material properties
+fix            m1 all property/global youngsModulus peratomtype ${E_1} ${E_2} ${E_3}
+fix            m2 all property/global poissonsRatio peratomtype ${nu_1} ${nu_2} ${nu_3}
+fix            m3 all property/global coefficientRestitution peratomtypepair 3 ${e_11} ${e_12} ${e_13} ${e_21} ${e_22} ${e_23} ${e_31} ${e_32} ${e_33}
+fix            m4 all property/global coefficientFriction peratomtypepair 3 ${f_11} ${f_12} ${f_13} ${f_21} ${f_22} ${f_23} ${f_31} ${f_32} ${f_33}
+fix            m5 all property/global characteristicVelocity scalar .01 	
+fix            m6 all property/global cohesionEnergyDensity peratomtypepair 3 ${c_11} ${c_12} ${c_13} ${c_21} ${c_22} ${c_23} ${c_31} ${c_32} ${c_33}
+fix             m7 all property/global coefficientRollingFriction peratomtypepair 3 ${rf_11} ${rf_12} ${rf_13} ${rf_21} ${rf_22} ${rf_23} ${rf_31} ${rf_32} ${rf_33}
+fix             m8 all property/global coefficientRollingViscousDamping peratomtypepair 3 ${v_11} ${v_12} ${v_13} ${v_21} ${v_22} ${v_23} ${v_31} ${v_32} ${v_33}
+
+
+## Pair style
+pair_style	gran model hertz tangential history cohesion sjkr rolling_friction epsd torsionTorque on
+pair_coeff	* *  # the asterisks set force field coefficients for all atom types
+
+# timestep
+timestep	0.000001
+#variable	tstep equal 0.000005
+
+# conserved - NVE - number, volume, and energy. the sum of KE and PE is conserved, T and P are unregulated
+fix		1 all nve/sphere
+
+# moon gravity defined in -z vector
+fix		2 all gravity 1.625 vector 0.0 0.0 -1.0 
+
+## Thermo settings
+# thermo style custom says what thermo data we want printed at each thermo timestep - timestep, num atoms, kinetic energy, volume
+thermo_style 	custom step atoms ke vol
+# thermo output every 1000 timesteps
+thermo		10000
+# LIGGGHTS will ignore last particles and will not normalize against num atoms
+thermo_modify	lost ignore norm no
+
+## walls
+fix		wall_y1 all wall/gran model hertz tangential history cohesion sjkr rolling_friction epsd primitive type 1 yplane 0.0 	# wall moves later
+fix		wall_y2 all wall/gran model hertz tangential history cohesion sjkr rolling_friction epsd primitive type 1 yplane 2.00 	# "endcap"
+fix		wall_z1 all wall/gran model hertz tangential history cohesion sjkr rolling_friction epsd primitive type 1 zplane 0  		# floor
+
+
+## Particle and particle region definitions
+
+# regions with some overlap, vertically segmented -x +x -y +y -z +z
+region		reg1 block -0.01 0.01 0.0 2.00 0.0 0.20 units box
+
+fix ts_check all check/timestep/gran 10000 0.1 0.1
+
+# Insert the first particles
+# delete atoms outside of specified height
+region outisde block -.01 .01 0.0 2.00 0.201 EDGE units box
+group tobedeleted region outisde
+#delete_atoms group tobedeleted
+
+# define piston region - all particles in the x z plane and a small sliver (1cm?) of y, beyond the mesh wall
+region piston block -.01 .01 0.0 0.0025 0.0 .25 units box
+group pistons region piston
+# wall fix
+#fix		wall1 all wall/gran model hertz tangential history mesh n_meshes 1 meshes cad1
+
+region floorRaft block -.01 .01 0.0 2.00 0.0 0.002
+group floorFreeze region floorRaft
+
+#compute displacements all displace/atom
+## compute the array of overlaps, which will contain p-id 1, p-id 2, and their overlap [m]
+compute deltas all pair/gran/local id delta
+##compute average_delta all reduce ave c_deltas
+## compute the array of particle stresses (6 element vector: xx, yy, zz, xy, xz, yz)
+compute stressed all stress/atom
+
+# settling period if not settled enough from server
+run     3000000 every 25000 &
+         "velocity all set 0. 0. 0." &
+         "write_restart restart_settling_c.static"
+
+
+reset_timestep	0
+# define output
+dump            dmp all custom 500 post/dump*.post id type x y z vx vy vz radius fx fy fz mass &
+                                c_stressed[1] c_stressed[2] c_stressed[3] &
+                                         c_stressed[4] c_stressed[5] c_stressed[6]
+
+dump dmp_local all local 500 post_computes/dump_computes*.post c_deltas[1] c_deltas[2] c_deltas[4]
+
+# let the packing relax under viscous damping
+velocity       all set 0. 0. 0.
+
+run 1
+# fix the floor
+fix freezer floorFreeze freeze
+
+#run 1
+variable v equal 10
+velocity pistons set 0.0 ${v} 0.0
+#run            25000 upto
+
+# high res region
+run 15000 upto
+
+undump dmp
+undump dmp_local
+
+# define output
+dump            dmp2 all custom 1000 post/dump*.post id type x y z vx vy vz radius fx fy fz mass &
+                                c_stressed[1] c_stressed[2] c_stressed[3] &
+                                         c_stressed[4] c_stressed[5] c_stressed[6]
+
+dump dmp_local2 all local 1000 post_computes/dump_computes*.post c_deltas[1] c_deltas[2] c_deltas[4]
+
+# medium reso
+run     200000 upto every 25000 "write_restart continueshock.static"
+
+
+undump          dmp2
+undump          dmp_local2
+dump            dmp3 all custom 100000 post/dump*.post id type x y z vx vy vz radius fx fy fz mass &
+                        c_stressed[1] c_stressed[2] c_stressed[3] &
+                                         c_stressed[4] c_stressed[5] c_stressed[6]
+
+dump dmp_local3 all local 100000 post_computes/dump_computes*.post c_deltas[1] c_deltas[2] c_deltas[4]
+
+# low res
+run 2000000 upto every 25000 "write_restart continueshock.static"
+
+undump          dmp3
+undump          dmp_local3
+
+
+run 1

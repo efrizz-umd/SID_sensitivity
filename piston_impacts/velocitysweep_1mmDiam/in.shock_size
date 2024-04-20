@@ -1,0 +1,177 @@
+### Eric Frizzell December, 2023 - efrizz@umd.edu
+### shock initiation script
+### velocity sweep 1mm particles
+
+### Initialization
+
+## Preliminaries
+
+units 	si
+atom_style 	granular
+
+# the product of the processors must equal P, the number of processors used when running the file: mpirun -np 4 ...
+processors 	1 128 1
+
+# periodic x boundaries, fixed y boundaries, fixed -z for floor and fixed shrink wrap for ceiling
+boundary 	p f fm
+
+#LIGGGHTS-Public shouuld produce the same answers for any newton flag setting, besides round off
+newton 	off
+
+soft_particles yes
+# communicate single - each processor acquires informaton for ghost atoms within a single distance of its sub domain - the default
+# vel yes - communicate velocity info with ghost atoms
+communicate 	single vel yes
+
+#hard_particles no
+variable SF equal 0.4 # scaling factor
+
+variable r_p equal ${SF}*1.25e-3 #1
+variable d_p equal 2*${r_p}
+
+## Declare domain
+# these are being scaled from the paper 1 base case of 2m, 20cm, 2cm
+variable x_lo equal -.01*${SF}
+variable x_hi equal 0.01*${SF}
+variable y_lo equal 0
+variable y_hi equal 2*${SF}
+variable z_lo equal 0
+variable z_hi equal 0.2*${SF}
+variable z_highest equal ${z_hi}+0.35*${SF}
+
+# -x +x -y +y -z +z 
+# reg is the name of the region, block is the region type, unitx box means define in box units instead of lattice
+# the slight negative in the z lower bound is to give room for the shake plate
+region  reg block ${x_lo} ${x_hi} ${y_lo} ${y_hi} ${z_lo} ${z_highest} units box
+
+# create_box creates a simulation box based on the specified region
+# N = 3, number of atom types used in the simulation
+#create_box	 1 reg
+#read_restart restart_2m_medium_25mmDiam.static
+#read_restart restart_2m_medium_25mmDiam_settled.static
+#read_restart restart_2m_medium_10mmDiam_settled.static
+read_restart restart_2m_medium_1mmDiam_settled.static
+
+# neighbor skin style - atom pairs within a neighbor cutoff distance = force cutoff + skin distance, style = bin
+variable n_r equal 0.5*${r_p}
+neighbor	 ${n_r} bin	 # half the radius of the smallest particle
+
+# neigh_modify delay 0, this is the default, rebuild neighbor list every timestep
+neigh_modify delay 0
+
+## Material properties
+fix            m1 all property/global youngsModulus peratomtype 5E6
+fix            m2 all property/global poissonsRatio peratomtype 0.2
+fix            m3 all property/global coefficientRestitution peratomtypepair 1 0.55
+fix            m4 all property/global coefficientFriction peratomtypepair 1 1.0
+fix            m5 all property/global characteristicVelocity scalar .01 	
+fix            m6 all property/global cohesionEnergyDensity peratomtypepair 1 1000.0
+fix             m7 all property/global coefficientRollingFriction peratomtypepair 1 0.8
+fix             m8 all property/global coefficientRollingViscousDamping peratomtypepair 1 2.0
+
+## Pair style
+pair_style     gran model hertz tangential history cohesion sjkr rolling_friction epsd torsionTorque on
+pair_coeff	* *  # the asterisks set force field coefficients for all atom types
+
+# timestep
+timestep	0.0000001
+
+## Thermo settings
+# thermo style custom says what thermo data we want printed at each thermo timestep - timestep, num atoms, kinetic energy, volume
+thermo_style 	custom step atoms ke vol
+# thermo output every 1000 timesteps
+thermo		10000
+# LIGGGHTS will ignore last particles and will not normalize against num atoms
+thermo_modify	lost ignore norm no
+
+## box walls - define simulation
+# we do not need x walls since the bc are periodic
+# place y walls at front and back of sim. later, front wall will be unfixed/refixed and given a velocity for a fewe timesteps, then set back to fixed wall - this is in place of Carlos' mesh wall. May need mesh wall later for partial wall impact
+# place one z wall on the floor
+
+fix		wall_y1 all wall/gran model hertz tangential history cohesion sjkr rolling_friction epsd primitive type 1 yplane 0.0 	# wall moves later
+fix		wall_y2 all wall/gran model hertz tangential history cohesion sjkr rolling_friction epsd primitive type 1 yplane ${y_hi}  	# "endcap"
+fix		wall_z1 all wall/gran model hertz tangential history cohesion sjkr rolling_friction epsd primitive type 1 zplane 0.0  		# floor
+
+# region and insertion
+group		nve_group region reg
+
+fix             2 all gravity 1.625 vector 0.0 0.0 -1.0
+
+
+region piston block ${x_lo} ${x_hi} ${y_lo} ${d_p} ${z_lo} ${z_highest} units box
+group pistons region piston
+
+region floorRaft block ${x_lo} ${x_hi} ${y_lo} ${y_hi} ${z_lo} ${d_p}
+group floorFreeze region floorRaft
+
+# appply nve integration to all particles that are inserted as single particles
+fix		integr nve_group nve/sphere
+
+fix ts_check all check/timestep/gran 1000 0.1 0.1
+
+compute stressed all stress/atom
+compute deltas all pair/gran/local id delta
+
+
+reset_timestep  0
+# define output
+dump            dmp all custom 2500 post/dump*.post id type x y z vx vy vz radius fx fy fz mass &
+                                c_stressed[1] c_stressed[2] c_stressed[3] &
+                                         c_stressed[4] c_stressed[5] c_stressed[6]
+
+dump dmp_local all local 2500 post_computes/dump_computes*.post c_deltas[1] c_deltas[2] c_deltas[4]
+
+# let the packing relax under viscous damping
+velocity       all set 0. 0. 0.
+
+run 1
+# fix the floor
+fix freezer floorFreeze freeze
+
+#run 1
+variable v equal 1 #3.16227766 #7.498942093324558  #5.623413251903491  #1 #10
+velocity pistons set 0.0 ${v} 0.0
+#run            25000 upto
+
+# high res region
+run 120000 upto
+
+undump dmp
+undump dmp_local
+
+# define output
+dump            dmp2 all custom 5000 post/dump*.post id type x y z vx vy vz radius fx fy fz mass &
+                                c_stressed[1] c_stressed[2] c_stressed[3] &
+                                         c_stressed[4] c_stressed[5] c_stressed[6]
+
+dump dmp_local2 all local 5000 post_computes/dump_computes*.post c_deltas[1] c_deltas[2] c_deltas[4]
+
+# medium reso
+run     8000000 upto every 250000 "write_restart continueshock.static"
+
+
+undump          dmp2
+undump          dmp_local2
+dump            dmp3 all custom 1000000 post/dump*.post id type x y z vx vy vz radius fx fy fz mass &
+                        c_stressed[1] c_stressed[2] c_stressed[3] &
+                                         c_stressed[4] c_stressed[5] c_stressed[6]
+
+dump dmp_local3 all local 1000000 post_computes/dump_computes*.post c_deltas[1] c_deltas[2] c_deltas[4]
+
+# low res
+run 10000000 upto every 250000 "write_restart continueshock.static"
+
+undump          dmp3
+undump          dmp_local3
+# set the particles to stationary
+#velocity       all set 0. 0. 0.
+
+#write_restart  restart.static
+
+run 1
+
+
+#undump		dmp3
+#undump		dumpstl1
+#undump		dmp_local3
