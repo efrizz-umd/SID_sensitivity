@@ -10,7 +10,8 @@ The text files in these folders are LIGGGHTS input scripts used in Frizzell & Ha
 There are two folders, 'channel_prep'  which contains the scripts used for filling channels of varying particle size ('fill scripts') and 'piston_impacts' which contains scripts for initiating shocks within the prepared channels ('shock sripts'). The result of running a fill script is to produce a 'restart file', a binary file (usually named something like restart_TESTTYPE.static) of particle states for a channel that has been filled with particles of various material parameters and has been settled (ie, particle forces have been allowed to slowly dissipate under gravity until they are 'low enough' - see our first work at [1]). The restart_file is then  used as in input to the shock script, allowing multiple velocities of impact to be studied without preforming channel preparation for each test. The restart files we produced in this work are located at the link below.
 
 ### Restart files ###
-Zenodo link TBD
+Find the restart files using the following Zenodo DOI: 10.5281/zenodo.11003040
+https://doi.org/10.5281/zenodo.11003040
 
 ### Channel preparation ###
 The in.pour files fill a channel of the desired channel geometry. In this work we perform a scaling of the base case from [1] which is a 2 meter long channel filled 20 cm deep with particles (2 cm in width). The particles for that channel were R_0 = 1.25 mm, which means that channel dimensions in terms of particls is 160, 1600, 16 (respectively). When changing particle size, we scale the original channel dimensions and particle insertion velocities by R_new/R_0. Also included is the 'meshes' folder, which contains a planar STL file of dimensions 2 m x 2 cm that is needed for the LIGGGHTS insertion procedure.
